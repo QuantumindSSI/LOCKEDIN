@@ -175,45 +175,36 @@ Analyze the following cryptographic implementation and determine if it is vulner
         
         # Training arguments optimized for Unsloth
         # Fix: use either max_steps OR num_train_epochs, not both
+        # Fix learning rate scheduler to avoid 0 LR issue
+        common_args = dict(
+            per_device_train_batch_size=per_device_train_batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            learning_rate=learning_rate,
+            fp16=not is_bfloat16_supported() if UNSLOTH_AVAILABLE else True,
+            bf16=is_bfloat16_supported() if UNSLOTH_AVAILABLE else False,
+            logging_steps=logging_steps,
+            optim="adamw_8bit" if UNSLOTH_AVAILABLE else "adamw_torch",
+            weight_decay=0.01,
+            lr_scheduler_type="cosine",  # Use cosine instead of linear
+            warmup_ratio=0.1,  # 10% warmup instead of fixed steps
+            seed=3407,
+            output_dir=output_dir,
+            save_steps=save_steps,
+            save_total_limit=2,
+            report_to="none",
+        )
+        
         if max_steps > 0:
             # Use max_steps
             training_args = TrainingArguments(
-                per_device_train_batch_size=per_device_train_batch_size,
-                gradient_accumulation_steps=gradient_accumulation_steps,
-                warmup_steps=warmup_steps,
                 max_steps=max_steps,
-                learning_rate=learning_rate,
-                fp16=not is_bfloat16_supported() if UNSLOTH_AVAILABLE else True,
-                bf16=is_bfloat16_supported() if UNSLOTH_AVAILABLE else False,
-                logging_steps=logging_steps,
-                optim="adamw_8bit" if UNSLOTH_AVAILABLE else "adamw_torch",
-                weight_decay=0.01,
-                lr_scheduler_type="linear",
-                seed=3407,
-                output_dir=output_dir,
-                save_steps=save_steps,
-                save_total_limit=2,
-                report_to="none",
+                **common_args
             )
         else:
             # Use num_train_epochs
             training_args = TrainingArguments(
-                per_device_train_batch_size=per_device_train_batch_size,
-                gradient_accumulation_steps=gradient_accumulation_steps,
-                warmup_steps=warmup_steps,
                 num_train_epochs=num_train_epochs,
-                learning_rate=learning_rate,
-                fp16=not is_bfloat16_supported() if UNSLOTH_AVAILABLE else True,
-                bf16=is_bfloat16_supported() if UNSLOTH_AVAILABLE else False,
-                logging_steps=logging_steps,
-                optim="adamw_8bit" if UNSLOTH_AVAILABLE else "adamw_torch",
-                weight_decay=0.01,
-                lr_scheduler_type="linear",
-                seed=3407,
-                output_dir=output_dir,
-                save_steps=save_steps,
-                save_total_limit=2,
-                report_to="none",
+                **common_args
             )
         
         # Tokenize dataset for training
