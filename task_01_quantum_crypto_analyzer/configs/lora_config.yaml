@@ -1,0 +1,16 @@
+# LoRA Configuration for Quantum-Resistant Cryptographic Protocol Analyzer
+
+lora:
+  r: 16                      # Rank
+  lora_alpha: 32             # LoRA alpha scaling
+  target_modules:            # Target modules for LoRA
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  lora_dropout: 0.05         # Dropout probability
+  bias: "none"               # Bias training: none, all, lora_only
+  task_type: "CAUSAL_LM"     # Task type

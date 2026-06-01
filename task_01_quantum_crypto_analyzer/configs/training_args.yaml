@@ -1,0 +1,32 @@
+# Training Arguments for Quantum-Resistant Cryptographic Protocol Analyzer
+
+training:
+  output_dir: "./models/checkpoints"
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_steps: 100
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 500
+  evaluation_strategy: "steps"
+  save_total_limit: 3
+  fp16: true
+  bf16: false
+  max_grad_norm: 1.0
+  weight_decay: 0.01
+  optim: "adamw_torch"
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.1
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  report_to: "none"
+  
+model:
+  model_name: "microsoft/phi-3-mini-4k-instruct"
+  trust_remote_code: true
+  torch_dtype: "auto"
+  device_map: "auto"

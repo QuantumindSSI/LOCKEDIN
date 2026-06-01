@@ -1,0 +1,36 @@
+# Model Configuration for Quantum-Resistant Cryptographic Protocol Analyzer
+
+base_model:
+  primary: "microsoft/phi-3-mini-4k-instruct"
+  alternatives:
+    - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    - "google/gemma-2b-it"
+  
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "float16"
+  bnb_4bit_use_double_quant: true
+
+inference:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: true
+  repetition_penalty: 1.15
+
+evaluation:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+  target_accuracy: 0.90
+  target_precision: 0.85
+  target_recall: 0.88
+  target_f1: 0.86
+
+edge_deployment:
+  target_latency_ms: 500
+  target_memory_gb: 4
+  target_power_watts: 5
