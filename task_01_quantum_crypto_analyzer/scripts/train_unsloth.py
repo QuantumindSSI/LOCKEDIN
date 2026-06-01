@@ -194,16 +194,28 @@ Analyze the following cryptographic implementation and determine if it is vulner
             report_to="none",
         )
         
-        # Initialize trainer
-        trainer = SFTTrainer(
-            model=model,
-            tokenizer=tokenizer,
-            train_dataset=train_dataset,
-            dataset_text_field="text",
-            max_seq_length=self.max_seq_length,
-            args=training_args,
-            packing=False,  # Can make training 5x faster for short sequences
-        )
+        # Initialize trainer (use processing_class for newer trl versions)
+        try:
+            trainer = SFTTrainer(
+                model=model,
+                processing_class=tokenizer,
+                train_dataset=train_dataset,
+                dataset_text_field="text",
+                max_seq_length=self.max_seq_length,
+                args=training_args,
+                packing=False,  # Can make training 5x faster for short sequences
+            )
+        except TypeError:
+            # Fallback for older trl versions
+            trainer = SFTTrainer(
+                model=model,
+                tokenizer=tokenizer,
+                train_dataset=train_dataset,
+                dataset_text_field="text",
+                max_seq_length=self.max_seq_length,
+                args=training_args,
+                packing=False,
+            )
         
         # Train
         print("\n" + "="*60)
