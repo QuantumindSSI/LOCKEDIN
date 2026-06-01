@@ -176,15 +176,17 @@ Analyze the following cryptographic implementation and determine if it is vulner
         # Training arguments optimized for Unsloth
         # Fix: use either max_steps OR num_train_epochs, not both
         # Fix learning rate scheduler to avoid 0 LR issue
+        # Fix grad_norm NaN with gradient clipping and reduced LR
         common_args = dict(
             per_device_train_batch_size=per_device_train_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
-            learning_rate=learning_rate,
+            learning_rate=learning_rate / 2,  # Reduce LR for stability (1e-4 instead of 2e-4)
             fp16=not is_bfloat16_supported() if UNSLOTH_AVAILABLE else True,
             bf16=is_bfloat16_supported() if UNSLOTH_AVAILABLE else False,
             logging_steps=logging_steps,
             optim="adamw_8bit" if UNSLOTH_AVAILABLE else "adamw_torch",
             weight_decay=0.01,
+            max_grad_norm=0.3,  # Gradient clipping to prevent NaN
             lr_scheduler_type="cosine",  # Use cosine instead of linear
             warmup_ratio=0.1,  # 10% warmup instead of fixed steps
             seed=3407,
@@ -192,6 +194,8 @@ Analyze the following cryptographic implementation and determine if it is vulner
             save_steps=save_steps,
             save_total_limit=2,
             report_to="none",
+            dataloader_num_workers=2,  # Reduce memory pressure
+            dataloader_pin_memory=False,
         )
         
         if max_steps > 0:
