@@ -194,28 +194,51 @@ Analyze the following cryptographic implementation and determine if it is vulner
             report_to="none",
         )
         
-        # Initialize trainer (use processing_class for newer trl versions)
+        # Tokenize dataset for training
+        def tokenize_function(examples):
+            return tokenizer(
+                examples["text"],
+                truncation=True,
+                max_length=self.max_seq_length,
+                padding="max_length",
+            )
+        
+        train_dataset = train_dataset.map(tokenize_function, batched=True)
+        
+        # Data collator
+        from transformers import DataCollatorForLanguageModeling
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        
+        # Initialize trainer (newer trl API uses data collator)
         try:
+            # Try new API signature
             trainer = SFTTrainer(
                 model=model,
-                processing_class=tokenizer,
-                train_dataset=train_dataset,
-                dataset_text_field="text",
-                max_seq_length=self.max_seq_length,
                 args=training_args,
-                packing=False,  # Can make training 5x faster for short sequences
-            )
-        except TypeError:
-            # Fallback for older trl versions
-            trainer = SFTTrainer(
-                model=model,
-                tokenizer=tokenizer,
                 train_dataset=train_dataset,
-                dataset_text_field="text",
-                max_seq_length=self.max_seq_length,
-                args=training_args,
-                packing=False,
+                data_collator=data_collator,
             )
+        except Exception as e1:
+            print(f"New API failed: {e1}")
+            try:
+                # Try with tokenizer/processing_class
+                trainer = SFTTrainer(
+                    model=model,
+                    args=training_args,
+                    train_dataset=train_dataset,
+                    tokenizer=tokenizer,
+                    max_seq_length=self.max_seq_length,
+                )
+            except Exception as e2:
+                print(f"Fallback 1 failed: {e2}")
+                # Final fallback - basic Trainer
+                from transformers import Trainer
+                trainer = Trainer(
+                    model=model,
+                    args=training_args,
+                    train_dataset=train_dataset,
+                    data_collator=data_collator,
+                )
         
         # Train
         print("\n" + "="*60)
