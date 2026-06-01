@@ -4,7 +4,11 @@ Training script for Quantum-Resistant Cryptographic Protocol Analyzer.
 Implements LoRA fine-tuning with evaluation metrics.
 """
 
+# Memory optimization for CUDA
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
+
 import json
 import torch
 import yaml
@@ -188,12 +192,18 @@ def main():
         target_modules=config.target_modules,
         lora_dropout=config.lora_dropout,
         bias="none",
-        task_type="CAUSAL_LM"
+        task_type="CAUSAL_LM",
+        use_rslora=True,  # Use rank-stabilized LoRA for better memory
     )
     
     # Apply LoRA
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    
+    # Enable gradient checkpointing to save memory
+    print("\nEnabling gradient checkpointing for memory efficiency...")
+    model.enable_input_require_grads()
+    model.gradient_checkpointing_enable()
     
     # Training arguments
     training_args = TrainingArguments(

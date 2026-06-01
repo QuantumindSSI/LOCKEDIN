@@ -3,19 +3,19 @@
 training:
   output_dir: "./models/checkpoints"
   num_train_epochs: 3
-  per_device_train_batch_size: 4
-  per_device_eval_batch_size: 4
-  gradient_accumulation_steps: 4
-  learning_rate: 2.0e-4
+  per_device_train_batch_size: 1  # Reduced from 4 to 1 to avoid OOM
+  per_device_eval_batch_size: 1   # Reduced from 4 to 1
+  gradient_accumulation_steps: 8   # Increased to maintain effective batch size
+  learning_rate: 1.0e-4  # Reduced for stability
   warmup_steps: 100
   logging_steps: 10
   save_steps: 500
   eval_steps: 500
-  evaluation_strategy: "steps"
+  eval_strategy: "steps"  # Fixed: evaluation_strategy -> eval_strategy
   save_total_limit: 3
   fp16: true
   bf16: false
-  max_grad_norm: 1.0
+  max_grad_norm: 0.3  # Gradient clipping to prevent NaN
   weight_decay: 0.01
   optim: "adamw_torch"
   lr_scheduler_type: "cosine"
@@ -24,6 +24,8 @@ training:
   metric_for_best_model: "eval_loss"
   greater_is_better: false
   report_to: "none"
+  dataloader_num_workers: 0  # Reduce memory pressure
+  dataloader_pin_memory: false
   
 model:
   model_name: "microsoft/phi-3-mini-4k-instruct"
