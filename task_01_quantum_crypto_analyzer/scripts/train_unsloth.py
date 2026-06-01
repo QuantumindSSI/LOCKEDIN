@@ -231,36 +231,14 @@ Analyze the following cryptographic implementation and determine if it is vulner
         from transformers import DataCollatorForLanguageModeling
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
         
-        # Initialize trainer (newer trl API uses data collator)
-        try:
-            # Try new API signature
-            trainer = SFTTrainer(
-                model=model,
-                args=training_args,
-                train_dataset=train_dataset,
-                data_collator=data_collator,
-            )
-        except Exception as e1:
-            print(f"New API failed: {e1}")
-            try:
-                # Try with tokenizer/processing_class
-                trainer = SFTTrainer(
-                    model=model,
-                    args=training_args,
-                    train_dataset=train_dataset,
-                    tokenizer=tokenizer,
-                    max_seq_length=self.max_seq_length,
-                )
-            except Exception as e2:
-                print(f"Fallback 1 failed: {e2}")
-                # Final fallback - basic Trainer
-                from transformers import Trainer
-                trainer = Trainer(
-                    model=model,
-                    args=training_args,
-                    train_dataset=train_dataset,
-                    data_collator=data_collator,
-                )
+        # Use standard Trainer (avoids SFTTrainer entropy computation issues)
+        from transformers import Trainer
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            data_collator=data_collator,
+        )
         
         # Train
         print("\n" + "="*60)
