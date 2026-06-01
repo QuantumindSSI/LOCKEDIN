@@ -1,8 +1,9 @@
 # Model Configuration for Quantum-Resistant Cryptographic Protocol Analyzer
 
 base_model:
-  primary: "microsoft/phi-3-mini-4k-instruct"
+  primary: "models/base_tiny"
   alternatives:
+    - "microsoft/phi-3-mini-4k-instruct"
     - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     - "google/gemma-2b-it"
   
