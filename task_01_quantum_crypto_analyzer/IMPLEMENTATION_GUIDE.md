@@ -58,16 +58,32 @@ python scripts/preprocessing.py
 
 ### Step 4: Download Base Model
 
+**Option A: Full Precision Models (for training)**
 ```bash
-# Download Phi-3 model
-huggingface-cli download microsoft/phi-3-mini-4k-instruct --local-dir models/base
+# Interactive model selector
+python scripts/download_base_model.py
 ```
 
-**Alternative:**
-```python
-from huggingface_hub import snapshot_download
-snapshot_download(repo_id="microsoft/phi-3-mini-4k-instruct", local_dir="models/base")
+Available sizes:
+- **tiny** (1.1B): TinyLlama - Fastest training, ~2GB VRAM
+- **small** (2B): Gemma-2B - Good balance, ~4GB VRAM
+- **medium** (3.8B): Phi-3-mini - Best accuracy, ~8GB VRAM
+
+**Option B: Quantized Models (for Victron deployment)**
+```bash
+# Download 4-bit quantized model for edge deployment
+python scripts/download_quantized_model.py
 ```
+
+Available quantized models:
+- **tiny-4bit** (~650MB): Fastest inference, minimal memory
+- **tiny-5bit** (~800MB): Better quality, still efficient
+- **phi3-4bit** (~2.3GB): Best balance for Victron hardware
+- **gemma2-4bit** (~1.6GB): Google's efficient quantized model
+
+**Recommendation:**
+- For **training**: Use `tiny` (1.1B) for fast iteration, `small` (2B) for production
+- For **Victron deployment**: Use `phi3-4bit` or `tiny-4bit` quantized models
 
 ### Step 5: Training
 

@@ -44,6 +44,24 @@ class TrainingConfig:
     lora_dropout: float
     target_modules: List[str]
 
+def find_available_model() -> str:
+    """Find the first available downloaded model."""
+    model_dirs = [
+        "models/base_tiny",
+        "models/base_small", 
+        "models/base_medium",
+        "models/base"
+    ]
+    
+    for model_dir in model_dirs:
+        if Path(model_dir).exists() and any(Path(model_dir).iterdir()):
+            print(f"Found model: {model_dir}")
+            return model_dir
+    
+    # If no local model found, use default from Hugging Face
+    print("No local model found. Using Hugging Face Hub model: microsoft/phi-3-mini-4k-instruct")
+    return "microsoft/phi-3-mini-4k-instruct"
+
 def load_config() -> TrainingConfig:
     """Load configuration from YAML files."""
     with open("configs/training_args.yaml", 'r') as f:
@@ -52,11 +70,11 @@ def load_config() -> TrainingConfig:
     with open("configs/lora_config.yaml", 'r') as f:
         lora_args = yaml.safe_load(f)['lora']
     
-    with open("configs/model_config.yaml", 'r') as f:
-        model_args = yaml.safe_load(f)['base_model']
+    # Find available model
+    model_name = find_available_model()
     
     return TrainingConfig(
-        model_name=model_args['primary'],
+        model_name=model_name,
         output_dir=training_args['output_dir'],
         num_train_epochs=training_args['num_train_epochs'],
         per_device_train_batch_size=training_args['per_device_train_batch_size'],
