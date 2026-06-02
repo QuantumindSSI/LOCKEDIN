@@ -212,6 +212,7 @@ def main():
         per_device_train_batch_size=config.per_device_train_batch_size,
         per_device_eval_batch_size=config.per_device_eval_batch_size,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
+        eval_accumulation_steps=4,  # Accumulate during eval to save memory
         learning_rate=config.learning_rate,
         warmup_steps=config.warmup_steps,
         logging_steps=config.logging_steps,
@@ -223,7 +224,8 @@ def main():
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
-        report_to="none"
+        report_to="none",
+        torch_empty_cache_steps=50  # Clear cache every 50 steps
     )
     
     # Data collator
