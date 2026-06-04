@@ -594,6 +594,75 @@ class SecureChannel:
         print(f"Saved {len(data)} real-world pattern samples to {output_file}")
         return data
     
+    def collect_real_cves_from_nvd(self) -> List[Dict]:
+        """
+        Fetch real CVE data from NIST NVD API.
+        Requires internet connection. Falls back to static data if API fails.
+        """
+        print("Fetching real CVE data from NVD API...")
+        
+        import urllib.request
+        import urllib.error
+        
+        # Keywords for crypto-related CVEs
+        keywords = ["cryptography", "RSA", "ECC", "AES", "TLS", "SSL", "encryption"]
+        cve_data = []
+        
+        try:
+            for keyword in keywords[:3]:  # Limit to avoid rate limiting
+                url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={keyword}&resultsPerPage=20"
+                
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "CryptoAnalyzer/1.0 (research@example.com)"}
+                )
+                
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                    
+                    if 'vulnerabilities' in data:
+                        for vuln in data['vulnerabilities']:
+                            cve = vuln.get('cve', {})
+                            cve_id = cve.get('id', 'Unknown')
+                            descriptions = cve.get('descriptions', [])
+                            desc = descriptions[0].get('value', '') if descriptions else ''
+                            
+                            # Determine quantum vulnerability
+                            desc_lower = desc.lower()
+                            is_quantum_vulnerable = any(x in desc_lower for x in 
+                                ['rsa', 'ecc', 'ecdsa', 'dsa', 'diffie-hellman', 'pkcs'])
+                            
+                            sample = {
+                                "cve_id": cve_id,
+                                "protocol_description": desc[:200] + "..." if len(desc) > 200 else desc,
+                                "implementation_code": self._encode_code(f"# CVE: {cve_id}\n# {desc[:500]}"),
+                                "vulnerability_type": "quantum_vulnerable" if is_quantum_vulnerable else "unknown",
+                                "quantum_attack_vector": "Shor's algorithm" if is_quantum_vulnerable else "Unknown",
+                                "severity": "unknown",
+                                "source": "nvd_api",
+                                "confidence_score": self.confidence_scores["heuristic"]
+                            }
+                            cve_data.append(sample)
+                            
+                            if len(cve_data) >= 50:  # Limit per keyword
+                                break
+                
+                print(f"  Fetched {len(cve_data)} CVEs for keyword '{keyword}'")
+                
+        except (urllib.error.URLError, json.JSONDecodeError, Exception) as e:
+            print(f"  Warning: Could not fetch from NVD API: {e}")
+            print("  Using fallback static CVE data instead")
+            return []
+        
+        # Save to file
+        if cve_data:
+            output_file = self.output_dir / "nvd_cve_data.json"
+            with open(output_file, 'w') as f:
+                json.dump(cve_data, f, indent=2)
+            print(f"Saved {len(cve_data)} real CVE samples from NVD to {output_file}")
+        
+        return cve_data
+    
     def collect_quantum_cryptanalysis_papers(self) -> List[Dict]:
         """
         Collect information from quantum cryptanalysis research papers.
@@ -717,15 +786,27 @@ def dilithium_verify(signature, message, pk):
         # Encode to base64 for storage
         return base64.b64encode(code.encode()).decode()
     
-    def merge_all_datasets(self) -> List[Dict]:
+    def merge_all_datasets(self, use_real_cves: bool = True) -> List[Dict]:
         """Merge all collected datasets into a single training dataset."""
         print("Merging all datasets...")
         
         nist_data = self.collect_nist_pqc_submissions()
-        cve_data = self.collect_cve_cryptographic_vulnerabilities()
+        
+        # Try to get real CVEs from NVD API first
+        if use_real_cves:
+            real_cve_data = self.collect_real_cves_from_nvd()
+            if real_cve_data:
+                cve_data = real_cve_data
+            else:
+                print("  Falling back to static CVE data...")
+                cve_data = self.collect_cve_cryptographic_vulnerabilities()
+        else:
+            cve_data = self.collect_cve_cryptographic_vulnerabilities()
+        
         quantum_data = self.collect_quantum_cryptanalysis_papers()
         real_world_data = self.collect_real_world_patterns()
         
+        # Merge all datasets
         merged_data = nist_data + cve_data + quantum_data + real_world_data
         
         # Save merged dataset
