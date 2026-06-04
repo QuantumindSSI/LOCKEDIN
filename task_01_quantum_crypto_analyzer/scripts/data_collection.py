@@ -827,6 +827,93 @@ class SecureChannel:
         
         return gh_data
     
+    def collect_exploit_db_data(self, limit: int = 50) -> List[Dict]:
+        """
+        Fetch exploit data from Exploit-DB GitHub mirror.
+        https://github.com/offensive-security/exploitdb
+        Uses the CSV database file which is publicly accessible.
+        """
+        print("Fetching exploit data from Exploit-DB...")
+        
+        exploit_data = []
+        
+        try:
+            import urllib.request
+            import csv
+            import io
+            
+            # Exploit-DB CSV filesdb - contains metadata about all exploits
+            url = "https://raw.githubusercontent.com/offensive-security/exploitdb/master/files_exploits.csv"
+            
+            headers = {
+                "User-Agent": "CryptoAnalyzer/1.0 (research@example.com)"
+            }
+            
+            req = urllib.request.Request(url, headers=headers)
+            
+            with urllib.request.urlopen(req, timeout=15) as response:
+                content = response.read().decode('utf-8', errors='ignore')
+                
+                # Parse CSV
+                csv_file = io.StringIO(content)
+                reader = csv.DictReader(csv_file)
+                
+                crypto_keywords = ['crypto', 'cryptography', 'encryption', 'rsa', 'aes', 
+                                 'ssl', 'tls', 'openssl', 'cipher', 'decrypt', 'encrypt']
+                
+                count = 0
+                for row in reader:
+                    if count >= limit:
+                        break
+                    
+                    description = row.get('description', '').lower()
+                    
+                    # Filter for crypto-related exploits
+                    if any(kw in description for kw in crypto_keywords):
+                        exploit_id = row.get('id', 'Unknown')
+                        cve_id = row.get('cve', 'Unknown') if row.get('cve') else 'Unknown'
+                        
+                        # Determine quantum vulnerability
+                        is_quantum_vulnerable = any(x in description for x in 
+                            ['rsa', 'ecc', 'ecdsa', 'dsa', 'diffie-hellman'])
+                        
+                        sample = {
+                            "protocol_description": f"Exploit-DB: {row.get('description', 'No description')}",
+                            "implementation_code": self._encode_code(
+                                f"# Exploit-DB ID: {exploit_id}\n"
+                                f"# CVE: {cve_id}\n"
+                                f"# Type: {row.get('type', 'Unknown')}\n"
+                                f"# Platform: {row.get('platform', 'Unknown')}\n"
+                                f"# {row.get('description', 'No description')[:500]}"
+                            ),
+                            "vulnerability_type": "quantum_vulnerable" if is_quantum_vulnerable else "unknown",
+                            "quantum_attack_vector": "Shor's algorithm" if is_quantum_vulnerable else "Unknown",
+                            "severity": "critical",  # Exploits are typically critical
+                            "source": "exploit_db",
+                            "exploit_id": exploit_id,
+                            "cve_id": cve_id,
+                            "platform": row.get('platform', 'unknown'),
+                            "exploit_type": row.get('type', 'unknown'),
+                            "confidence_score": self.confidence_scores["heuristic"]
+                        }
+                        exploit_data.append(sample)
+                        count += 1
+                
+                print(f"  Fetched {len(exploit_data)} crypto-related exploits from Exploit-DB")
+                
+        except Exception as e:
+            print(f"  Warning: Could not fetch from Exploit-DB: {e}")
+            print("  Exploit-DB requires no API key but may be rate limited")
+        
+        # Save to file
+        if exploit_data:
+            output_file = self.output_dir / "exploit_db_data.json"
+            with open(output_file, 'w') as f:
+                json.dump(exploit_data, f, indent=2)
+            print(f"Saved {len(exploit_data)} samples from Exploit-DB to {output_file}")
+        
+        return exploit_data
+    
     def integrate_external_dataset(self, dataset_path: str, dataset_name: str) -> List[Dict]:
         """
         Integrate external datasets like Big-Vul or Devign.
@@ -1063,6 +1150,7 @@ def dilithium_verify(signature, message, pk):
     def merge_all_datasets(self, use_real_cves: bool = True, 
                             use_vulners: bool = True, 
                             use_github: bool = True,
+                            use_exploit_db: bool = True,
                             external_datasets: List[Tuple[str, str]] = None) -> List[Dict]:
         """
         Merge all collected datasets into a single training dataset.
@@ -1071,10 +1159,11 @@ def dilithium_verify(signature, message, pk):
             use_real_cves: Fetch from NVD API
             use_vulners: Fetch from Vulners API
             use_github: Fetch from GitHub Security Advisories
+            use_exploit_db: Fetch from Exploit-DB
             external_datasets: List of (path, name) tuples for external datasets
         """
         print("Merging all datasets...")
-        print("  Sources: NIST PQC + NVD + Vulners + GitHub + Real-world patterns + External")
+        print("  Sources: NIST PQC + NVD + Vulners + GitHub + Exploit-DB + Real-world patterns + External")
         
         nist_data = self.collect_nist_pqc_submissions()
         
@@ -1100,6 +1189,11 @@ def dilithium_verify(signature, message, pk):
             github_token = os.environ.get('GITHUB_TOKEN')
             github_data = self.collect_github_security_advisories(github_token)
         
+        # Fetch from Exploit-DB
+        exploit_db_data = []
+        if use_exploit_db:
+            exploit_db_data = self.collect_exploit_db_data(limit=50)
+        
         quantum_data = self.collect_quantum_cryptanalysis_papers()
         real_world_data = self.collect_real_world_patterns()
         
@@ -1112,7 +1206,7 @@ def dilithium_verify(signature, message, pk):
         
         # Merge all datasets
         merged_data = (nist_data + cve_data + vulners_data + github_data + 
-                      quantum_data + real_world_data + external_data)
+                      exploit_db_data + quantum_data + real_world_data + external_data)
         
         # Save merged dataset
         output_file = self.output_dir / "merged_crypto_vulnerability_data.json"
@@ -1225,15 +1319,17 @@ def main():
             use_real_cves=False,
             use_vulners=False,
             use_github=False,
+            use_exploit_db=False,
             external_datasets=external_datasets
         )
     else:
         print("Mode: ONLINE (fetching from APIs)")
-        print("APIs: NVD + Vulners + GitHub + Synthetic")
+        print("APIs: NVD + Vulners + GitHub + Exploit-DB + Synthetic")
         merged_data = collector.merge_all_datasets(
             use_real_cves=True,
             use_vulners=True,
             use_github=True,
+            use_exploit_db=True,
             external_datasets=external_datasets
         )
     
@@ -1250,6 +1346,7 @@ def main():
         print("  - NVD API (real CVEs)")
         print("  - Vulners API (real vulnerabilities)")
         print("  - GitHub Security Advisories (real advisories)")
+        print("  - Exploit-DB (real exploits)")
         print("  - Real-world patterns (synthetic)")
         print("  - Quantum cryptanalysis (synthetic)")
         if external_datasets:
