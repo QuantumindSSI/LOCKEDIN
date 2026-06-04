@@ -9,15 +9,15 @@ training:
   learning_rate: 1.0e-4  # Reduced for stability
   warmup_steps: 100
   logging_steps: 10
-  save_steps: 500
-  eval_steps: 500
-  eval_strategy: "steps"  # Fixed: evaluation_strategy -> eval_strategy
-  save_total_limit: 3
+  save_steps: 100  # Reduced from 500 to 100 for more frequent checkpointing
+  eval_steps: 1000  # Disabled frequent eval to prevent OOM
+  eval_strategy: "no"  # Disable evaluation during training to prevent OOM kill
+  save_total_limit: 5  # Increased from 3 to 5 for more checkpoints
   fp16: true
   bf16: false
   max_grad_norm: 0.3  # Gradient clipping to prevent NaN
   weight_decay: 0.01
-  optim: "adamw_torch"
+  optim: "adamw_torch_fused"  # Fused optimizer for memory efficiency
   lr_scheduler_type: "cosine"
   warmup_ratio: 0.1
   load_best_model_at_end: true
@@ -26,6 +26,8 @@ training:
   report_to: "none"
   dataloader_num_workers: 0  # Reduce memory pressure
   dataloader_pin_memory: false
+  eval_accumulation_steps: 4  # Accumulate eval to reduce memory
+  torch_empty_cache_steps: 50  # Clear cache every 50 steps
   
 model:
   model_name: "microsoft/phi-3-mini-4k-instruct"
