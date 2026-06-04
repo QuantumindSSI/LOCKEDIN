@@ -663,6 +663,280 @@ class SecureChannel:
         
         return cve_data
     
+    def collect_vulners_data(self, api_key: str = None) -> List[Dict]:
+        """
+        Fetch vulnerability data from Vulners API.
+        https://vulners.com/
+        Free tier: 1000 requests/month
+        """
+        print("Fetching vulnerability data from Vulners API...")
+        
+        vulners_data = []
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            # Search for crypto-related vulnerabilities
+            search_terms = ["cryptography", "openssl", "aes", "rsa"]
+            
+            headers = {
+                "User-Agent": "CryptoAnalyzer/1.0",
+                "Content-Type": "application/json"
+            }
+            
+            if api_key:
+                headers["Authorization"] = f"Token {api_key}"
+            
+            for term in search_terms[:2]:  # Limit to avoid rate limits
+                url = f"https://vulners.com/api/v3/search/lucene/?query={term}&size=20"
+                
+                req = urllib.request.Request(url, headers=headers)
+                
+                try:
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        data = json.loads(response.read().decode())
+                        
+                        if 'data' in data and 'search' in data['data']:
+                            for item in data['data']['search']:
+                                doc = item.get('_source', {})
+                                
+                                # Extract relevant fields
+                                title = doc.get('title', '')
+                                description = doc.get('description', '')
+                                cve_id = doc.get('cvelist', ['Unknown'])[0] if doc.get('cvelist') else 'Unknown'
+                                
+                                # Determine quantum vulnerability from description
+                                desc_lower = description.lower()
+                                is_quantum_vulnerable = any(x in desc_lower for x in 
+                                    ['rsa', 'ecc', 'ecdsa', 'dsa', 'diffie-hellman'])
+                                
+                                sample = {
+                                    "protocol_description": f"{title}: {description[:200]}",
+                                    "implementation_code": self._encode_code(
+                                        f"# Vulners: {doc.get('id', 'Unknown')}\n"
+                                        f"# CVE: {cve_id}\n# {description[:500]}"
+                                    ),
+                                    "vulnerability_type": "quantum_vulnerable" if is_quantum_vulnerable else "unknown",
+                                    "quantum_attack_vector": "Shor's algorithm" if is_quantum_vulnerable else "Unknown",
+                                    "severity": doc.get('cvss', {}).get('severity', 'unknown'),
+                                    "source": "vulners_api",
+                                    "vulners_id": doc.get('id'),
+                                    "cve_id": cve_id,
+                                    "confidence_score": self.confidence_scores["heuristic"]
+                                }
+                                vulners_data.append(sample)
+                                
+                except urllib.error.HTTPError as e:
+                    if e.code == 429:
+                        print(f"  Rate limited on Vulners. Continuing with {len(vulners_data)} samples.")
+                        break
+                    else:
+                        raise
+                        
+            print(f"  Fetched {len(vulners_data)} vulnerabilities from Vulners")
+            
+        except Exception as e:
+            print(f"  Warning: Could not fetch from Vulners API: {e}")
+        
+        # Save to file
+        if vulners_data:
+            output_file = self.output_dir / "vulners_data.json"
+            with open(output_file, 'w') as f:
+                json.dump(vulners_data, f, indent=2)
+            print(f"Saved {len(vulners_data)} samples from Vulners to {output_file}")
+        
+        return vulners_data
+    
+    def collect_github_security_advisories(self, github_token: str = None) -> List[Dict]:
+        """
+        Fetch security advisories from GitHub.
+        https://docs.github.com/en/rest/security-advisories
+        Requires GitHub token for higher rate limits.
+        """
+        print("Fetching GitHub Security Advisories...")
+        
+        gh_data = []
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            # GitHub GraphQL API for advisories
+            url = "https://api.github.com/advisories"
+            
+            headers = {
+                "User-Agent": "CryptoAnalyzer/1.0",
+                "Accept": "application/vnd.github+json"
+            }
+            
+            if github_token:
+                headers["Authorization"] = f"Bearer {github_token}"
+            
+            # Fetch first page (30 advisories)
+            req = urllib.request.Request(f"{url}?per_page=30&severity=critical,high", headers=headers)
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                
+                for advisory in data:
+                    # Filter for crypto-related advisories
+                    summary = advisory.get('summary', '').lower()
+                    description = advisory.get('description', '').lower()
+                    
+                    crypto_keywords = ['cryptography', 'crypto', 'encryption', 'rsa', 'aes', 'tls', 
+                                      'ssl', 'cipher', 'openssl', 'gnutls', 'certificate']
+                    
+                    if any(kw in summary or kw in description for kw in crypto_keywords):
+                        cve_id = advisory.get('cve_id', 'Unknown')
+                        
+                        # Determine quantum vulnerability
+                        is_quantum_vulnerable = any(x in description for x in 
+                            ['rsa', 'ecc', 'ecdsa', 'dsa'])
+                        
+                        sample = {
+                            "protocol_description": f"{advisory.get('summary', 'No summary')}",
+                            "implementation_code": self._encode_code(
+                                f"# GitHub Advisory: {advisory.get('ghsa_id', 'Unknown')}\n"
+                                f"# CVE: {cve_id}\n"
+                                f"# Severity: {advisory.get('severity', 'unknown')}\n"
+                                f"# {advisory.get('description', 'No description')[:500]}"
+                            ),
+                            "vulnerability_type": "quantum_vulnerable" if is_quantum_vulnerable else "unknown",
+                            "quantum_attack_vector": "Shor's algorithm" if is_quantum_vulnerable else "Unknown",
+                            "severity": advisory.get('severity', 'unknown'),
+                            "source": "github_advisory",
+                            "ghsa_id": advisory.get('ghsa_id'),
+                            "cve_id": cve_id,
+                            "confidence_score": self.confidence_scores["heuristic"]
+                        }
+                        gh_data.append(sample)
+                        
+            print(f"  Fetched {len(gh_data)} crypto-related advisories from GitHub")
+            
+        except Exception as e:
+            print(f"  Warning: Could not fetch from GitHub API: {e}")
+            print("  Tip: Set GITHUB_TOKEN environment variable for authenticated requests")
+        
+        # Save to file
+        if gh_data:
+            output_file = self.output_dir / "github_advisories.json"
+            with open(output_file, 'w') as f:
+                json.dump(gh_data, f, indent=2)
+            print(f"Saved {len(gh_data)} samples from GitHub to {output_file}")
+        
+        return gh_data
+    
+    def integrate_external_dataset(self, dataset_path: str, dataset_name: str) -> List[Dict]:
+        """
+        Integrate external datasets like Big-Vul or Devign.
+        
+        Args:
+            dataset_path: Path to downloaded dataset JSON/CSV
+            dataset_name: Name for source tracking (e.g., 'big_vul', 'devign')
+        
+        Expected format:
+        - Big-Vul: JSON with fields: cve_id, commit_id, commit_message, diff
+        - Devign: JSON with vulnerability reports
+        """
+        print(f"Integrating external dataset: {dataset_name} from {dataset_path}")
+        
+        dataset_path = Path(dataset_path)
+        if not dataset_path.exists():
+            print(f"  Warning: Dataset file not found at {dataset_path}")
+            print(f"  Download from:")
+            if dataset_name == 'big_vul':
+                print(f"    Big-Vul: https://github.com/Zeo-Ta/big-vul")
+            elif dataset_name == 'devign':
+                print(f"    Devign: GitHub search for 'devign vulnerability dataset'")
+            return []
+        
+        data = []
+        
+        try:
+            with open(dataset_path, 'r') as f:
+                raw_data = json.load(f)
+            
+            # Process based on dataset structure
+            for item in raw_data[:500]:  # Limit to 500 samples
+                # Extract code - handle different field names
+                code = item.get('diff', item.get('code', item.get('func', '')))
+                cve_id = item.get('cve_id', item.get('CVE', 'Unknown'))
+                description = item.get('commit_message', item.get('description', ''))
+                
+                # Determine quantum vulnerability from code/description
+                text_to_check = (code + ' ' + description).lower()
+                is_quantum_vulnerable = any(x in text_to_check for x in 
+                    ['rsa', 'ecc', 'ecdsa', 'dsa', 'diffie-hellman', 'pkcs'])
+                
+                sample = {
+                    "protocol_description": f"{dataset_name}: {description[:200]}",
+                    "implementation_code": self._encode_code(code if code else f"# {dataset_name}\n# CVE: {cve_id}"),
+                    "vulnerability_type": "quantum_vulnerable" if is_quantum_vulnerable else "unknown",
+                    "quantum_attack_vector": "Shor's algorithm" if is_quantum_vulnerable else "Unknown",
+                    "severity": item.get('severity', 'unknown'),
+                    "source": dataset_name,
+                    "cve_id": cve_id,
+                    "confidence_score": self.confidence_scores["pattern_match"]
+                }
+                data.append(sample)
+            
+            print(f"  Integrated {len(data)} samples from {dataset_name}")
+            
+        except Exception as e:
+            print(f"  Error processing {dataset_name}: {e}")
+            return []
+        
+        # Save to file
+        if data:
+            output_file = self.output_dir / f"{dataset_name}_integrated.json"
+            with open(output_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            print(f"Saved {len(data)} integrated samples to {output_file}")
+        
+        return data
+    
+    def download_big_vul_instructions(self):
+        """Print instructions for downloading Big-Vul dataset."""
+        print("""
+=== Big-Vul Dataset Integration Instructions ===
+Big-Vul contains 100k+ real CVEs with vulnerable code commits.
+
+1. Clone the repository:
+   git clone https://github.com/Zeo-Ta/big-vul.git
+   
+2. Download the dataset:
+   cd big-vul
+   python download_dataset.py
+   
+3. Process with this script:
+   python scripts/data_collection.py --external big_vul.json
+   
+Or manually integrate:
+   collector = CryptoDataCollector()
+   data = collector.integrate_external_dataset('path/to/big_vul.json', 'big_vul')
+
+Expected fields: cve_id, commit_id, commit_message, diff, severity
+""")
+    
+    def download_devign_instructions(self):
+        """Print instructions for downloading Devign dataset."""
+        print("""
+=== Devign Dataset Integration Instructions ===
+Devign contains 27k vulnerability reports from open-source projects.
+
+1. Search GitHub for 'devign vulnerability dataset'
+2. Download the JSON/CSV files
+3. Process with this script:
+   python scripts/data_collection.py --external devign.json
+   
+Or manually integrate:
+   collector = CryptoDataCollector()
+   data = collector.integrate_external_dataset('path/to/devign.json', 'devign')
+
+Expected fields: cve, code, description, severity
+""")
+    
     def collect_quantum_cryptanalysis_papers(self) -> List[Dict]:
         """
         Collect information from quantum cryptanalysis research papers.
@@ -786,9 +1060,21 @@ def dilithium_verify(signature, message, pk):
         # Encode to base64 for storage
         return base64.b64encode(code.encode()).decode()
     
-    def merge_all_datasets(self, use_real_cves: bool = True) -> List[Dict]:
-        """Merge all collected datasets into a single training dataset."""
+    def merge_all_datasets(self, use_real_cves: bool = True, 
+                            use_vulners: bool = True, 
+                            use_github: bool = True,
+                            external_datasets: List[Tuple[str, str]] = None) -> List[Dict]:
+        """
+        Merge all collected datasets into a single training dataset.
+        
+        Args:
+            use_real_cves: Fetch from NVD API
+            use_vulners: Fetch from Vulners API
+            use_github: Fetch from GitHub Security Advisories
+            external_datasets: List of (path, name) tuples for external datasets
+        """
         print("Merging all datasets...")
+        print("  Sources: NIST PQC + NVD + Vulners + GitHub + Real-world patterns + External")
         
         nist_data = self.collect_nist_pqc_submissions()
         
@@ -803,11 +1089,30 @@ def dilithium_verify(signature, message, pk):
         else:
             cve_data = self.collect_cve_cryptographic_vulnerabilities()
         
+        # Fetch from Vulners API
+        vulners_data = []
+        if use_vulners:
+            vulners_data = self.collect_vulners_data()
+        
+        # Fetch from GitHub Security Advisories
+        github_data = []
+        if use_github:
+            github_token = os.environ.get('GITHUB_TOKEN')
+            github_data = self.collect_github_security_advisories(github_token)
+        
         quantum_data = self.collect_quantum_cryptanalysis_papers()
         real_world_data = self.collect_real_world_patterns()
         
+        # Integrate external datasets
+        external_data = []
+        if external_datasets:
+            for path, name in external_datasets:
+                ext_data = self.integrate_external_dataset(path, name)
+                external_data.extend(ext_data)
+        
         # Merge all datasets
-        merged_data = nist_data + cve_data + quantum_data + real_world_data
+        merged_data = (nist_data + cve_data + vulners_data + github_data + 
+                      quantum_data + real_world_data + external_data)
         
         # Save merged dataset
         output_file = self.output_dir / "merged_crypto_vulnerability_data.json"
@@ -881,16 +1186,74 @@ def dilithium_verify(signature, message, pk):
         print("="*60 + "\n")
 
 def main():
-    """Main data collection pipeline."""
+    """Main data collection pipeline with CLI arguments."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Collect crypto vulnerability data")
+    parser.add_argument("--offline", action="store_true", help="Use only synthetic data (no API calls)")
+    parser.add_argument("--external", nargs=2, metavar=("PATH", "NAME"), 
+                       help="Integrate external dataset: --external path/to/data.json dataset_name")
+    parser.add_argument("--big-vul-help", action="store_true", help="Show Big-Vul download instructions")
+    parser.add_argument("--devign-help", action="store_true", help="Show Devign download instructions")
+    
+    args = parser.parse_args()
+    
     collector = CryptoDataCollector(target_samples=10000)
     
-    # Collect all data
-    merged_data = collector.merge_all_datasets()
+    # Show help for external datasets
+    if args.big_vul_help:
+        collector.download_big_vul_instructions()
+        return
     
-    print(f"\nData collection complete!")
+    if args.devign_help:
+        collector.download_devign_instructions()
+        return
+    
+    # Prepare external datasets
+    external_datasets = []
+    if args.external:
+        external_datasets.append((args.external[0], args.external[1]))
+    
+    # Collect all data
+    print(f"\n{'='*60}")
+    print("CRYPTO VULNERABILITY DATA COLLECTION")
+    print(f"{'='*60}\n")
+    
+    if args.offline:
+        print("Mode: OFFLINE (synthetic data only)")
+        merged_data = collector.merge_all_datasets(
+            use_real_cves=False,
+            use_vulners=False,
+            use_github=False,
+            external_datasets=external_datasets
+        )
+    else:
+        print("Mode: ONLINE (fetching from APIs)")
+        print("APIs: NVD + Vulners + GitHub + Synthetic")
+        merged_data = collector.merge_all_datasets(
+            use_real_cves=True,
+            use_vulners=True,
+            use_github=True,
+            external_datasets=external_datasets
+        )
+    
+    print(f"\n{'='*60}")
+    print("DATA COLLECTION COMPLETE")
+    print(f"{'='*60}")
     print(f"Total samples collected: {len(merged_data)}")
     print(f"Target: 10,000+ samples for production training")
     print(f"Data saved to: data/raw/")
+    
+    if not args.offline:
+        print("\nSources used:")
+        print("  - NIST PQC (synthetic)")
+        print("  - NVD API (real CVEs)")
+        print("  - Vulners API (real vulnerabilities)")
+        print("  - GitHub Security Advisories (real advisories)")
+        print("  - Real-world patterns (synthetic)")
+        print("  - Quantum cryptanalysis (synthetic)")
+        if external_datasets:
+            print(f"  - External: {', '.join(name for _, name in external_datasets)}")
 
 if __name__ == "__main__":
     main()
