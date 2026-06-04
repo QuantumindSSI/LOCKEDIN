@@ -58,20 +58,45 @@ class CryptoDataPreprocessor:
             f"Implementation:\n{code}"
         )
         
-        # Create output
-        output_text = (
-            f"Vulnerability Type: {sample['vulnerability_type']}\n"
-            f"Quantum Attack Vector: {sample['quantum_attack_vector']}\n"
-            f"Severity: {sample['severity']}\n"
+        # Create output with enhanced information
+        output_parts = [
+            f"Vulnerability Type: {sample['vulnerability_type']}",
+            f"Quantum Attack Vector: {sample['quantum_attack_vector']}",
+            f"Severity: {sample['severity']}",
             f"Description: {sample.get('description', 'Cryptographic implementation analysis')}"
-        )
+        ]
         
-        return {
+        # Add optional metadata if present
+        if 'cve_id' in sample:
+            output_parts.append(f"CVE Reference: {sample['cve_id']}")
+        if 'confidence_score' in sample:
+            output_parts.append(f"Confidence: {sample['confidence_score']:.2f}")
+        if 'pattern_type' in sample:
+            output_parts.append(f"Pattern: {sample['pattern_type']}")
+        if 'framework' in sample and sample['framework']:
+            output_parts.append(f"Framework: {sample['framework']}")
+        
+        output_text = "\n".join(output_parts)
+        
+        # Build enriched sample with metadata
+        result = {
             "instruction": instruction,
             "input": input_text,
             "output": output_text,
-            "label": 1 if sample['vulnerability_type'] == 'quantum_vulnerable' else 0
+            "label": 1 if sample['vulnerability_type'] == 'quantum_vulnerable' else 0,
+            "metadata": {
+                "source": sample.get('source', 'unknown'),
+                "confidence_score": sample.get('confidence_score', 0.5),
+                "is_negative_example": sample.get('is_negative_example', False),
+                "is_adversarial_example": sample.get('is_adversarial_example', False),
+                "obfuscation_level": sample.get('obfuscation_level', 'none'),
+                "code_length_category": sample.get('code_length_category', 'unknown'),
+                "algorithm_type": sample.get('algorithm_type', 'unknown'),
+                "severity": sample.get('severity', 'unknown')
+            }
         }
+        
+        return result
     
     def preprocess_dataset(self, data: List[Dict]) -> List[Dict]:
         """Preprocess entire dataset."""
@@ -135,27 +160,71 @@ class CryptoDataPreprocessor:
                 f"### Input:\n{sample['input']}\n\n"
                 f"### Response:\n{sample['output']}"
             )
-            hf_data.append({
+            
+            # Include metadata in HuggingFace format
+            hf_sample = {
                 "text": text,
                 "label": sample['label']
-            })
+            }
+            
+            # Add metadata if present
+            if 'metadata' in sample:
+                hf_sample['metadata'] = sample['metadata']
+            
+            hf_data.append(hf_sample)
+        
         return hf_data
     
     def analyze_dataset(self, data: List[Dict]):
-        """Analyze dataset statistics."""
-        print("\n=== Dataset Analysis ===")
+        """Analyze dataset statistics with enhanced metrics."""
+        print("\n" + "="*60)
+        print("PROCESSED DATASET ANALYSIS")
+        print("="*60)
         
         # Count labels
         vulnerable_count = sum(1 for d in data if d['label'] == 1)
         resistant_count = sum(1 for d in data if d['label'] == 0)
         
-        print(f"Total samples: {len(data)}")
+        print(f"\nTotal samples: {len(data)}")
         print(f"Quantum-vulnerable: {vulnerable_count} ({vulnerable_count/len(data)*100:.1f}%)")
         print(f"Quantum-resistant: {resistant_count} ({resistant_count/len(data)*100:.1f}%)")
         
         # Average text length
-        avg_length = sum(len(d['text']) for d in data) / len(data)
+        avg_length = sum(len(d.get('text', '')) for d in data) / len(data)
         print(f"Average text length: {avg_length:.0f} characters")
+        
+        # Metadata analysis if available
+        samples_with_metadata = [d for d in data if 'metadata' in d]
+        if samples_with_metadata:
+            print("\n--- Metadata Analysis ---")
+            
+            # By source
+            sources = {}
+            for d in samples_with_metadata:
+                src = d['metadata'].get('source', 'unknown')
+                sources[src] = sources.get(src, 0) + 1
+            print("\nBy source:")
+            for src, count in sorted(sources.items(), key=lambda x: -x[1])[:5]:
+                print(f"  - {src}: {count} samples")
+            
+            # Confidence score distribution
+            confidence_scores = [d['metadata'].get('confidence_score', 0.5) for d in samples_with_metadata]
+            if confidence_scores:
+                avg_conf = sum(confidence_scores) / len(confidence_scores)
+                high_conf = sum(1 for c in confidence_scores if c >= 0.85)
+                print(f"\nConfidence scores:")
+                print(f"  - Average: {avg_conf:.2f}")
+                print(f"  - High confidence (>=0.85): {high_conf} ({high_conf/len(confidence_scores)*100:.1f}%)")
+            
+            # Special categories
+            neg_count = sum(1 for d in samples_with_metadata if d['metadata'].get('is_negative_example', False))
+            adv_count = sum(1 for d in samples_with_metadata if d['metadata'].get('is_adversarial_example', False))
+            if neg_count > 0:
+                print(f"  - Negative examples: {neg_count}")
+            if adv_count > 0:
+                print(f"  - Adversarial examples: {adv_count}")
+        
+        print("="*60)
     
     def run_pipeline(self):
         """Run complete preprocessing pipeline."""
